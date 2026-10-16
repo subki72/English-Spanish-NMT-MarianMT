@@ -5,7 +5,7 @@ sentencepiece==0.2.2
 fastapi==0.143.2
 uvicorn==0.54.0
 pydantic==2.14.1
-pydantic-settings==2.16.0
+pydantic-settings==2.15.0
 prometheus-client==0.26.0
 anyio==4.15.1
 python-dotenv==1.2.4
