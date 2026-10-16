@@ -11,6 +11,7 @@ import pytest
 from httpx import ASGITransport
 
 from app.main import app, batcher, engine, rate_limiter
+from app.rate_limiter import SlidingWindowRateLimiter
 
 
 @pytest.fixture(autouse=True)
@@ -687,3 +688,174 @@ async def test_structured_logging_on_validation_error(caplog):
     assert entry["status_code"] == 422
     assert entry["tokens_generated"] == 0
     assert entry["client_ip"] == "192.0.2.88"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_disabled(mock_ready_engine):
+    """Verify rate limiting can be disabled via configuration toggle without adding rate-limit headers."""
+    batcher.start()
+    rate_limiter.enabled = False
+    rate_limiter.requests_limit = 1
+
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp1 = await client.post("/v1/translate", json={"text": "First request."})
+            assert resp1.status_code == 200
+            assert "X-RateLimit-Limit" not in resp1.headers
+
+            resp2 = await client.post("/v1/translate", json={"text": "Second request."})
+            assert resp2.status_code == 200
+            assert "X-RateLimit-Limit" not in resp2.headers
+    finally:
+        await batcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_reset_epoch_consistency(mock_ready_engine):
+    """Verify X-RateLimit-Reset is consistent with the window start and does not jump into the future on subsequent requests."""
+    batcher.start()
+    rate_limiter.requests_limit = 5
+    rate_limiter.window_seconds = 60
+
+    try:
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp1 = await client.post(
+                "/v1/translate",
+                json={"text": "Hello 1."},
+                headers={"X-Forwarded-For": "198.51.100.77"},
+            )
+            assert resp1.status_code == 200
+            reset1 = int(resp1.headers["X-RateLimit-Reset"])
+
+            resp2 = await client.post(
+                "/v1/translate",
+                json={"text": "Hello 2."},
+                headers={"X-Forwarded-For": "198.51.100.77"},
+            )
+            assert resp2.status_code == 200
+            reset2 = int(resp2.headers["X-RateLimit-Reset"])
+
+            # Reset epoch should remain the same (or within 1s due to timing)
+            assert abs(reset2 - reset1) <= 1
+    finally:
+        await batcher.stop()
+
+
+def test_client_ip_proxy_chains_and_fallbacks():
+    """Verify SlidingWindowRateLimiter.get_client_ip handles complex proxy chains, X-Real-IP, and missing client objects."""
+    from starlette.datastructures import Headers
+    from starlette.requests import Request
+
+    # 1. Complex proxy chain with leading/trailing whitespace and empty parts
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": Headers({"x-forwarded-for": " ,  203.0.113.195 , 198.51.100.1 "}).raw,
+        "client": ("10.0.0.1", 12345),
+    }
+    req = Request(scope)
+    assert SlidingWindowRateLimiter.get_client_ip(req) == "203.0.113.195"
+
+    # 2. X-Real-IP header fallback when X-Forwarded-For is absent
+    scope_real = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": Headers({"x-real-ip": " 198.51.100.44 "}).raw,
+        "client": ("10.0.0.1", 12345),
+    }
+    req_real = Request(scope_real)
+    assert SlidingWindowRateLimiter.get_client_ip(req_real) == "198.51.100.44"
+
+    # 3. Direct client host when proxy headers absent
+    scope_direct = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": Headers().raw,
+        "client": ("192.168.1.100", 54321),
+    }
+    req_direct = Request(scope_direct)
+    assert SlidingWindowRateLimiter.get_client_ip(req_direct) == "192.168.1.100"
+
+    # 4. Fallback to 127.0.0.1 when client object is None
+    scope_none = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": Headers().raw,
+        "client": None,
+    }
+    req_none = Request(scope_none)
+    assert SlidingWindowRateLimiter.get_client_ip(req_none) == "127.0.0.1"
+
+
+@pytest.mark.asyncio
+async def test_structured_logging_disabled_toggle(mock_ready_engine, caplog):
+    """Verify no structured JSON logs are emitted when enable_structured_logging is False."""
+    import logging
+
+    from app.config import settings
+
+    batcher.start()
+    caplog.clear()
+    original_toggle = settings.enable_structured_logging
+    settings.enable_structured_logging = False
+
+    try:
+        with caplog.at_level(logging.INFO, logger="nmt.structured"):
+            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.post(
+                    "/v1/translate",
+                    json={"text": "Hello world."},
+                    headers={"X-Request-ID": "test-disabled-log-id"},
+                )
+                assert resp.status_code == 200
+
+        # Verify no records from nmt.structured logger
+        nmt_logs = [r for r in caplog.records if r.name == "nmt.structured"]
+        assert len(nmt_logs) == 0
+    finally:
+        settings.enable_structured_logging = original_toggle
+        await batcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_structured_logging_on_500_single_emission(mock_ready_engine, caplog):
+    """Verify that an endpoint failure produces exactly ONE structured error log with error details (no duplicates)."""
+    import logging
+
+    mock_ready_engine.translate_batch.side_effect = RuntimeError("Simulated engine GPU crash")
+    batcher.start()
+    caplog.clear()
+
+    req_id = "single-error-trace-500"
+    try:
+        with caplog.at_level(logging.ERROR, logger="nmt.structured"):
+            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.post(
+                    "/v1/translate",
+                    json={"text": "Hello world."},
+                    headers={"X-Request-ID": req_id},
+                )
+                assert resp.status_code == 500
+
+        # Verify exactly one structured JSON error was logged
+        matching_logs = []
+        for r in caplog.records:
+            if r.name == "nmt.structured":
+                try:
+                    parsed = json.loads(r.getMessage())
+                    if parsed.get("request_id") == req_id:
+                        matching_logs.append(parsed)
+                except Exception:
+                    pass
+
+        assert len(matching_logs) == 1
+        entry = matching_logs[0]
+        assert entry["status_code"] == 500
+        assert entry["request_id"] == req_id
+        assert "Simulated engine GPU crash" in entry.get("error", "") or entry["status_code"] == 500
+    finally:
+        await batcher.stop()

@@ -280,7 +280,7 @@
 
       if (data.translations && data.translations.length > 0) {
         const resultItem = data.translations[0];
-        displayTranslation(resultItem.target, data.latency_ms || clientElapsedMs, data.model);
+        displayTranslation(resultItem.target, data.latency_ms || clientElapsedMs, data.model, data.tokens_generated);
         lastTranslatedText = text;
         lastTranslatedBeam = beamSize;
       } else {
@@ -310,7 +310,7 @@
     }
   }
 
-  function displayTranslation(translatedText, latencyMs, modelName) {
+  function displayTranslation(translatedText, latencyMs, modelName, tokensGenerated) {
     targetPlaceholder.classList.add('hidden');
     targetError.classList.add('hidden');
     targetLoading.classList.add('hidden');
@@ -322,10 +322,13 @@
     const roundedLatency = Math.round(latencyMs * 10) / 10;
     latencyBadge.textContent = `${roundedLatency} ms`;
 
-    // Estimate generated tokens with correct grammatical singular/plural
-    const words = translatedText.trim().split(/\s+/).filter(Boolean).length;
-    const estimatedTokens = Math.max(1, Math.round(words * 1.3));
-    tokenPill.textContent = `${estimatedTokens} ${estimatedTokens === 1 ? 'token' : 'tokens'}`;
+    // Display generated tokens from server or fallback to word-based heuristic
+    let tokenCount = tokensGenerated;
+    if (typeof tokenCount !== 'number' || tokenCount <= 0) {
+      const words = translatedText.trim().split(/\s+/).filter(Boolean).length;
+      tokenCount = Math.max(1, Math.round(words * 1.3));
+    }
+    tokenPill.textContent = `${tokenCount} ${tokenCount === 1 ? 'token' : 'tokens'}`;
 
     if (modelName && modelPill) {
       modelPill.textContent = modelName.replace('Helsinki-NLP/', '');

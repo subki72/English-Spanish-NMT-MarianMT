@@ -12,11 +12,13 @@ import logging
 import time
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.config import settings
 from app.rate_limiter import SlidingWindowRateLimiter
 
 structured_logger = logging.getLogger("nmt.structured")
@@ -44,6 +46,7 @@ class RequestIdAndStructuredLoggingMiddleware(BaseHTTPMiddleware):
 
         start_time = time.perf_counter()
         status_code = 500
+        error_msg: str | None = None
 
         try:
             response = await call_next(request)
@@ -55,42 +58,31 @@ class RequestIdAndStructuredLoggingMiddleware(BaseHTTPMiddleware):
 
         except Exception as exc:
             status_code = 500
-            latency_ms = (time.perf_counter() - start_time) * 1000.0
-            tokens_generated = getattr(request.state, "tokens_generated", 0)
-
-            log_entry = {
-                "timestamp": datetime.now(UTC).isoformat(),
-                "request_id": request_id,
-                "client_ip": client_ip,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": status_code,
-                "latency_ms": round(latency_ms, 2),
-                "tokens_generated": tokens_generated,
-                "error": str(exc),
-            }
-            structured_logger.error(json.dumps(log_entry))
+            error_msg = str(exc)
             raise
 
         finally:
-            latency_ms = (time.perf_counter() - start_time) * 1000.0
-            tokens_generated = getattr(request.state, "tokens_generated", 0)
+            if settings.enable_structured_logging:
+                latency_ms = (time.perf_counter() - start_time) * 1000.0
+                tokens_generated = getattr(request.state, "tokens_generated", 0)
 
-            log_entry = {
-                "timestamp": datetime.now(UTC).isoformat(),
-                "request_id": request_id,
-                "client_ip": client_ip,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": status_code,
-                "latency_ms": round(latency_ms, 2),
-                "tokens_generated": tokens_generated,
-            }
+                log_entry: dict[str, Any] = {
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "request_id": request_id,
+                    "client_ip": client_ip,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": status_code,
+                    "latency_ms": round(latency_ms, 2),
+                    "tokens_generated": tokens_generated,
+                }
+                if error_msg is not None:
+                    log_entry["error"] = error_msg
 
-            # Log level according to status code
-            if status_code >= 500:
-                structured_logger.error(json.dumps(log_entry))
-            elif status_code >= 400:
-                structured_logger.warning(json.dumps(log_entry))
-            else:
-                structured_logger.info(json.dumps(log_entry))
+                # Log level according to status code
+                if status_code >= 500:
+                    structured_logger.error(json.dumps(log_entry))
+                elif status_code >= 400:
+                    structured_logger.warning(json.dumps(log_entry))
+                else:
+                    structured_logger.info(json.dumps(log_entry))

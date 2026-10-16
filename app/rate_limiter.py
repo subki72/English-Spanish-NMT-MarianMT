@@ -7,6 +7,7 @@ Provides per-IP throttling conforming to RFC 6585 with standard rate-limit heade
 """
 
 import asyncio
+import math
 import time
 from collections import defaultdict
 
@@ -34,10 +35,11 @@ class SlidingWindowRateLimiter:
         """Extract client IP address respecting X-Forwarded-For and X-Real-IP proxies."""
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            # First IP in comma-separated list is the original client
-            client = forwarded.split(",")[0].strip()
-            if client:
-                return client
+            # First non-empty IP in comma-separated list is the original client
+            for part in forwarded.split(","):
+                client = part.strip()
+                if client:
+                    return client
         real_ip = request.headers.get("x-real-ip")
         if real_ip and real_ip.strip():
             return real_ip.strip()
@@ -85,11 +87,12 @@ class SlidingWindowRateLimiter:
             self._cleanup_expired(now)
             cutoff = now - self.window_seconds
             valid_timestamps = [ts for ts in self._requests[client_ip] if ts > cutoff]
+            self._requests[client_ip] = valid_timestamps
 
             if len(valid_timestamps) >= self.requests_limit:
                 # Quota exceeded -> calculate wait time until oldest request leaves window
                 oldest_ts = valid_timestamps[0]
-                retry_after = max(1, int(self.window_seconds - (now - oldest_ts)) + 1)
+                retry_after = max(1, math.ceil(self.window_seconds - (now - oldest_ts)))
                 reset_epoch = int(now_epoch + retry_after)
 
                 headers = {
@@ -111,7 +114,8 @@ class SlidingWindowRateLimiter:
             valid_timestamps.append(now)
             self._requests[client_ip] = valid_timestamps
             remaining = max(0, self.requests_limit - len(valid_timestamps))
-            reset_epoch = int(now_epoch + self.window_seconds)
+            time_until_reset = max(1.0, self.window_seconds - (now - valid_timestamps[0]))
+            reset_epoch = int(now_epoch + time_until_reset)
 
             return {
                 "X-RateLimit-Limit": str(self.requests_limit),
