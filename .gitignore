@@ -5,10 +5,14 @@ env/
 venv/
 ENV/
 
-# Jupyter Notebook
+# Non-runtime documentation & prompts
+Prompt/
+
+# Jupyter Notebooks & Experiments
+*.ipynb
 .ipynb_checkpoints/
 
-# Python Cache & Testing
+# Python Cache, Linting & Testing
 __pycache__/
 *.py[cod]
 *$py.class
@@ -16,6 +20,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+.mypy_cache/
 *.log
 
 # Converted & Pre-trained Models
@@ -30,6 +35,9 @@ results_translator_ted/
 *.msgpack
 *.spm
 
-# OS generated files
+# OS & Editor generated files
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+*.swp

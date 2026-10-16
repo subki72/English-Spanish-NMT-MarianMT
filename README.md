@@ -1,4 +1,4 @@
-# 🇪🇸 English-to-Spanish Neural Machine Translation (NMT) — Production Service
+# English-to-Spanish Neural Machine Translation (NMT) — Production Service
 
 [![CI Pipeline](https://github.com/yourusername/English-Spanish-NMT-MarianMT/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/English-Spanish-NMT-MarianMT/actions)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.143+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -11,7 +11,7 @@ High-throughput, low-latency, containerized enterprise microservice for English-
 
 ---
 
-## ⚡ Key Architectural Highlights
+## Key Architectural Highlights
 
 | Dimension | Legacy Prototype | Production Service (Current) |
 | :--- | :--- | :--- |
@@ -29,7 +29,7 @@ High-throughput, low-latency, containerized enterprise microservice for English-
 
 ---
 
-## 🛠️ Blocker & Audit Remediation Summary
+## Blocker & Audit Remediation Summary
 
 This production implementation eliminates all critical architectural blockers identified in the QA & Security audits:
 - **BLK-01 (Zero Service Layer)**: Implemented full async FastAPI microservice with dynamic batching, lifecycle hooks, and OpenAPI/Swagger documentation.
@@ -44,7 +44,7 @@ This production implementation eliminates all critical architectural blockers id
 
 ---
 
-## 🚀 Quick Start (Local Setup)
+## Quick Start (Local Setup)
 
 ### 1. Prerequisites
 - Python 3.10+ (Python 3.10, 3.11, or 3.12)
@@ -84,10 +84,10 @@ The service will start and be accessible at `http://localhost:8000`.
 
 ---
 
-## 🎨 Interactive Web UI
+## Interactive Web UI
 
 The service includes a built-in, responsive, full-screen (100vh) translation workbench accessible directly from any browser at:
-👉 **[http://localhost:8000/](http://localhost:8000/)**
+**[http://localhost:8000/](http://localhost:8000/)**
 
 ### Web UI Features:
 - **Zero-Bloat & Air-Gapped Ready**: Styled entirely via self-contained [app/static/styles.css](file:///c:/Users/subki/Downloads/English-Spanish-NMT-MarianMT/app/static/styles.css) without any external CDN dependencies.
@@ -97,7 +97,7 @@ The service includes a built-in, responsive, full-screen (100vh) translation wor
 
 ---
 
-## 📖 API Documentation & Endpoints
+## API Documentation & Endpoints
 
 - **Interactive Web UI**: [http://localhost:8000/](http://localhost:8000/)
 - **Swagger UI (Interactive API Docs)**: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -164,7 +164,7 @@ curl -X GET http://localhost:8000/readyz
 
 ---
 
-## 🐳 Container & Kubernetes Deployment
+## Container & Kubernetes Deployment
 
 ### 1. Docker
 The repository includes a multi-stage `Dockerfile` with a non-root system user (`UID 10001`) and native Python urllib healthchecks.
@@ -202,7 +202,7 @@ For operational SOPs, incident response playbooks, and alerting PromQL rules, re
 
 ---
 
-## 📊 Benchmark & Accuracy Evaluation
+## Benchmark & Accuracy Evaluation
 
 Evaluate translation accuracy and throughput on the standard Hugging Face `opus-100` test set:
 ```bash
@@ -221,7 +221,7 @@ python scripts/evaluate_bleu.py --model_dir models/opus-mt-en-es-ct2-int8 --max_
 
 ---
 
-## 🧪 Testing & Code Quality
+## Testing & Code Quality
 
 Run the comprehensive automated test suite (unit tests, integration tests, concurrency stress tests, rate limiters, and security guards):
 
@@ -239,7 +239,7 @@ ruff format --check .
 
 ---
 
-## ⚙️ Configuration Reference
+## Configuration Reference
 
 Customize the service via environment variables or a `.env` file:
 
@@ -266,6 +266,6 @@ Customize the service via environment variables or a `.env` file:
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
