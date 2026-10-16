@@ -182,7 +182,7 @@ class DynamicBatcher:
                         next_job = await asyncio.wait_for(self.queue.get(), timeout=timeout)
                         jobs.append(next_job)
                         total_sentences += len(next_job.texts)
-                    except (TimeoutError, asyncio.CancelledError):
+                    except (asyncio.TimeoutError, TimeoutError, asyncio.CancelledError):
                         break
 
                 # Execute batch processing
