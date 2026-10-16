@@ -13,6 +13,8 @@ from collections import defaultdict
 
 from fastapi import HTTPException, Request, status
 
+from app.config import settings
+
 
 class SlidingWindowRateLimiter:
     """Thread-safe sliding window rate limiter tracking requests per client IP."""
@@ -32,20 +34,22 @@ class SlidingWindowRateLimiter:
 
     @staticmethod
     def get_client_ip(request: Request) -> str:
-        """Extract client IP address respecting X-Forwarded-For and X-Real-IP proxies."""
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            # First non-empty IP in comma-separated list is the original client
-            for part in forwarded.split(","):
-                client = part.strip()
-                if client:
-                    return client
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip and real_ip.strip():
-            return real_ip.strip()
-        if request.client and request.client.host:
-            return request.client.host
-        return "127.0.0.1"
+        """Extract client IP address, trusting X-Forwarded-For/X-Real-IP only from trusted proxies."""
+        direct_ip = request.client.host if request.client and request.client.host else "127.0.0.1"
+
+        if direct_ip in settings.trusted_proxies:
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                # First non-empty IP in comma-separated list is the original client
+                for part in forwarded.split(","):
+                    client = part.strip()
+                    if client:
+                        return client
+            real_ip = request.headers.get("x-real-ip")
+            if real_ip and real_ip.strip():
+                return real_ip.strip()
+
+        return direct_ip
 
     def _cleanup_expired(self, now: float) -> None:
         """Evict stale timestamp records to prevent memory leak over time."""

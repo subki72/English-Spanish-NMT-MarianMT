@@ -1,9 +1,1 @@
-torch
-numpy
-pandas
-matplotlib
-transformers
-datasets
-evaluate
-sacrebleu
-sentencepiece
+-r requirements-prod.txt

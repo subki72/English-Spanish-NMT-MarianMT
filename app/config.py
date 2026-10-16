@@ -76,6 +76,12 @@ class Settings(BaseSettings):
         le=1024,
         description="Maximum generated tokens to prevent truncation while capping compute",
     )
+    max_queue_depth: int = Field(
+        default=1000,
+        ge=1,
+        le=50000,
+        description="Maximum pending requests allowed in the dynamic batching queue before 503 saturation rejection",
+    )
 
     # Server & Operations
     host: str = Field(default="0.0.0.0", description="Bind host")
@@ -100,6 +106,10 @@ class Settings(BaseSettings):
         default=60,
         ge=1,
         description="Time window in seconds for sliding window rate limiter",
+    )
+    trusted_proxies: set[str] = Field(
+        default_factory=lambda: {"127.0.0.1", "::1", "localhost"},
+        description="Set of trusted reverse proxy IP addresses allowed to forward client IPs via X-Forwarded-For",
     )
 
     # Observability & Structured Logging

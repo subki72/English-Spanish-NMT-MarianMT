@@ -11,7 +11,7 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -67,7 +67,7 @@ class RequestIdAndStructuredLoggingMiddleware(BaseHTTPMiddleware):
                 tokens_generated = getattr(request.state, "tokens_generated", 0)
 
                 log_entry: dict[str, Any] = {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "request_id": request_id,
                     "client_ip": client_ip,
                     "method": request.method,
@@ -76,6 +76,11 @@ class RequestIdAndStructuredLoggingMiddleware(BaseHTTPMiddleware):
                     "latency_ms": round(latency_ms, 2),
                     "tokens_generated": tokens_generated,
                 }
+                if error_msg is None and status_code >= 500:
+                    state_error = getattr(request.state, "error_message", None)
+                    if state_error:
+                        error_msg = str(state_error)
+
                 if error_msg is not None:
                     log_entry["error"] = error_msg
 

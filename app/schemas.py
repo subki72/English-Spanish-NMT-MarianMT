@@ -6,8 +6,10 @@ import unicodedata
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.config import settings
 
-def sanitize_and_validate_text(text: str, max_chars: int = 1000) -> str:
+
+def sanitize_and_validate_text(text: str, max_chars: int | None = None) -> str:
     """Validate and sanitize a single input string.
 
     Guards against:
@@ -17,6 +19,9 @@ def sanitize_and_validate_text(text: str, max_chars: int = 1000) -> str:
     - Leading UTF-8 BOM artifacts
     - Retains valid compound emojis with Zero-Width Joiners (ZWJ)
     """
+    if max_chars is None:
+        max_chars = settings.max_input_length
+
     if not isinstance(text, str):
         raise ValueError("Input text must be a string.")
 
@@ -50,7 +55,7 @@ class TranslationRequest(BaseModel):
 
     text: str | list[str] = Field(
         ...,
-        description="Single English sentence or list of sentences to translate to Spanish (max 1000 chars per sentence).",
+        description="Single English sentence or list of sentences to translate to Spanish (max characters per sentence configured by max_input_length).",
     )
     beam_size: int | None = Field(
         default=None,
@@ -69,13 +74,13 @@ class TranslationRequest(BaseModel):
     @classmethod
     def validate_text_field(cls, v: str | list[str]) -> list[str]:
         if isinstance(v, str):
-            validated = [sanitize_and_validate_text(v)]
+            validated = [sanitize_and_validate_text(v, max_chars=settings.max_input_length)]
         elif isinstance(v, list):
             if len(v) == 0:
                 raise ValueError("Text list must contain at least one sentence.")
             if len(v) > 64:
                 raise ValueError(f"Batch request exceeds maximum allowed items (max 64, received {len(v)}).")
-            validated = [sanitize_and_validate_text(item) for item in v]
+            validated = [sanitize_and_validate_text(item, max_chars=settings.max_input_length) for item in v]
         else:
             raise ValueError("Field 'text' must be either a string or a list of strings.")
         return validated
@@ -128,6 +133,7 @@ class TranslationResponse(BaseModel):
                 "target_language": "es",
                 "model": "Helsinki-NLP/opus-mt-en-es-ct2-int8",
                 "latency_ms": 18.42,
+                "tokens_generated": 10,
             }
         }
     )

@@ -231,6 +231,6 @@ sha256sum -c models/checksums.sha256
 If model weights are corrupted, re-convert directly from HuggingFace base model:
 ```bash
 python scripts/convert_model.py
-python scripts/evaluate_bleu.py --sample-size 500
+python scripts/evaluate_bleu.py --max_samples 500
 ```
 Verify BLEU score is $\ge 40.0$ before redeploying.

@@ -348,7 +348,7 @@ async def test_translate_custom_parameters(mock_ready_engine):
 
 @pytest.mark.asyncio
 async def test_translate_engine_failure_returns_500(mock_ready_engine):
-    """Verify engine failure in dynamic batcher worker returns 500 and fails future cleanly."""
+    """Verify engine failure in dynamic batcher worker returns sanitized 500 and does not leak internal error."""
     mock_ready_engine.translate_batch.side_effect = RuntimeError("Inference hardware fault")
     batcher.start()
     try:
@@ -358,7 +358,9 @@ async def test_translate_engine_failure_returns_500(mock_ready_engine):
                 json={"text": "Hello world."},
             )
             assert resp.status_code == 500
-            assert "Translation processing error" in resp.json()["detail"]
+            detail = resp.json()["detail"]
+            assert "An internal translation error occurred. Please quote your X-Request-ID for assistance." in detail
+            assert "Inference hardware fault" not in detail
     finally:
         await batcher.stop()
 
@@ -742,33 +744,46 @@ async def test_rate_limit_reset_epoch_consistency(mock_ready_engine):
 
 
 def test_client_ip_proxy_chains_and_fallbacks():
-    """Verify SlidingWindowRateLimiter.get_client_ip handles complex proxy chains, X-Real-IP, and missing client objects."""
+    """Verify SlidingWindowRateLimiter.get_client_ip handles trusted vs untrusted proxies, X-Real-IP, and fallbacks."""
     from starlette.datastructures import Headers
     from starlette.requests import Request
 
-    # 1. Complex proxy chain with leading/trailing whitespace and empty parts
-    scope = {
+    from app.config import settings
+
+    # 1. Untrusted client IP sending X-Forwarded-For: must return direct client IP (CWE-290 protection)
+    scope_untrusted = {
         "type": "http",
         "method": "GET",
         "path": "/",
         "headers": Headers({"x-forwarded-for": " ,  203.0.113.195 , 198.51.100.1 "}).raw,
         "client": ("10.0.0.1", 12345),
     }
-    req = Request(scope)
-    assert SlidingWindowRateLimiter.get_client_ip(req) == "203.0.113.195"
+    req_untrusted = Request(scope_untrusted)
+    assert SlidingWindowRateLimiter.get_client_ip(req_untrusted) == "10.0.0.1"
 
-    # 2. X-Real-IP header fallback when X-Forwarded-For is absent
+    # 2. Trusted proxy sending X-Forwarded-For: extracts first original client IP
+    scope_trusted = {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": Headers({"x-forwarded-for": " ,  203.0.113.195 , 198.51.100.1 "}).raw,
+        "client": ("127.0.0.1", 12345),
+    }
+    req_trusted = Request(scope_trusted)
+    assert SlidingWindowRateLimiter.get_client_ip(req_trusted) == "203.0.113.195"
+
+    # 3. Trusted proxy with X-Real-IP header when X-Forwarded-For is absent
     scope_real = {
         "type": "http",
         "method": "GET",
         "path": "/",
         "headers": Headers({"x-real-ip": " 198.51.100.44 "}).raw,
-        "client": ("10.0.0.1", 12345),
+        "client": ("127.0.0.1", 12345),
     }
     req_real = Request(scope_real)
     assert SlidingWindowRateLimiter.get_client_ip(req_real) == "198.51.100.44"
 
-    # 3. Direct client host when proxy headers absent
+    # 4. Direct client host when proxy headers absent
     scope_direct = {
         "type": "http",
         "method": "GET",
@@ -779,7 +794,7 @@ def test_client_ip_proxy_chains_and_fallbacks():
     req_direct = Request(scope_direct)
     assert SlidingWindowRateLimiter.get_client_ip(req_direct) == "192.168.1.100"
 
-    # 4. Fallback to 127.0.0.1 when client object is None
+    # 5. Fallback to 127.0.0.1 when client object is None
     scope_none = {
         "type": "http",
         "method": "GET",
@@ -789,6 +804,14 @@ def test_client_ip_proxy_chains_and_fallbacks():
     }
     req_none = Request(scope_none)
     assert SlidingWindowRateLimiter.get_client_ip(req_none) == "127.0.0.1"
+
+    # 6. Dynamically configured trusted proxy
+    orig_proxies = settings.trusted_proxies
+    try:
+        settings.trusted_proxies = {"10.0.0.1"}
+        assert SlidingWindowRateLimiter.get_client_ip(req_untrusted) == "203.0.113.195"
+    finally:
+        settings.trusted_proxies = orig_proxies
 
 
 @pytest.mark.asyncio
@@ -856,6 +879,100 @@ async def test_structured_logging_on_500_single_emission(mock_ready_engine, capl
         entry = matching_logs[0]
         assert entry["status_code"] == 500
         assert entry["request_id"] == req_id
-        assert "Simulated engine GPU crash" in entry.get("error", "") or entry["status_code"] == 500
+        assert entry.get("error") == "Simulated engine GPU crash"
     finally:
         await batcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_bounded_queue_saturation_503(mock_ready_engine, monkeypatch):
+    """Verify that when dynamic batcher queue is full, incoming request returns HTTP 503."""
+    batcher.start()
+    try:
+        # Mock put_nowait to raise asyncio.QueueFull simulating saturation
+        monkeypatch.setattr(batcher.queue, "put_nowait", MagicMock(side_effect=asyncio.QueueFull))
+
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post("/v1/translate", json={"text": "Overflow request."})
+            assert resp.status_code == 503
+            assert "Translation queue saturated, retry later" in resp.json()["detail"]
+    finally:
+        await batcher.stop()
+
+
+def test_cors_wildcard_hardened_disallows_credentials():
+    """Verify that when cors_origins contains '*', allow_credentials is set to False."""
+    from starlette.middleware.cors import CORSMiddleware
+
+    cors_mw = None
+    for mw in app.user_middleware:
+        if mw.cls == CORSMiddleware:
+            cors_mw = mw
+            break
+    assert cors_mw is not None
+    assert cors_mw.kwargs.get("allow_credentials") is False
+
+
+@pytest.mark.asyncio
+async def test_lifespan_fail_fast_on_engine_load_error(monkeypatch, tmp_path):
+    """Verify lifespan startup re-raises exception if engine loading fails."""
+    from app.config import settings
+    from app.main import lifespan
+
+    fake_model_dir = tmp_path / "fake_model"
+    fake_model_dir.mkdir()
+    (fake_model_dir / "model.bin").write_text("fake weights")
+
+    monkeypatch.setattr(settings, "model_dir", fake_model_dir)
+
+    def failing_load():
+        raise RuntimeError("Fatal weight corruption on boot")
+
+    monkeypatch.setattr(engine, "load", failing_load)
+
+    with pytest.raises(RuntimeError, match="Fatal weight corruption on boot"):
+        async with lifespan(app):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_max_input_length_override(mock_ready_engine):
+    """Verify that settings.max_input_length dynamically enforces maximum text length."""
+    from app.config import settings
+
+    orig_length = settings.max_input_length
+    batcher.start()
+    try:
+        settings.max_input_length = 30
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp_ok = await client.post("/v1/translate", json={"text": "Short sentence."})
+            assert resp_ok.status_code == 200
+
+            resp_fail = await client.post(
+                "/v1/translate",
+                json={"text": "This text exceeds thirty characters limit easily."},
+            )
+            assert resp_fail.status_code == 422
+            assert "exceeds maximum allowed length of 30 characters" in resp_fail.text
+    finally:
+        settings.max_input_length = orig_length
+        await batcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_batcher_submit_raises_queue_full():
+    """Verify batcher.submit directly raises asyncio.QueueFull when the queue reaches capacity."""
+    from app.main import DynamicBatcher
+
+    b = DynamicBatcher(engine=engine, max_queue_depth=1)
+    b._stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    # Create an unfinished task to satisfy is_running
+    dummy_fut = loop.create_future()
+    b._worker_task = dummy_fut
+    b._queue = asyncio.Queue(maxsize=1)
+    # Fill the 1-slot queue
+    await b.queue.put("placeholder_job")
+
+    with pytest.raises(asyncio.QueueFull):
+        await b.submit(["text"])

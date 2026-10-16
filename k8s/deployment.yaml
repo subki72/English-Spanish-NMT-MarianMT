@@ -86,7 +86,7 @@ spec:
               memory: "2Gi"
           startupProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 5

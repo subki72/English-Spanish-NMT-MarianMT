@@ -163,7 +163,8 @@ curl -X POST http://localhost:8000/v1/translate \
   "source_language": "en",
   "target_language": "es",
   "model": "Helsinki-NLP/opus-mt-en-es-ct2-int8",
-  "latency_ms": 18.42
+  "latency_ms": 18.42,
+  "tokens_generated": 10
 }
 ```
 
@@ -195,7 +196,8 @@ curl -X POST http://localhost:8000/v1/translate \
   "source_language": "en",
   "target_language": "es",
   "model": "Helsinki-NLP/opus-mt-en-es-ct2-int8",
-  "latency_ms": 28.51
+  "latency_ms": 28.51,
+  "tokens_generated": 18
 }
 ```
 

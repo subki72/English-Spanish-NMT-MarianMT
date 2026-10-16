@@ -78,10 +78,17 @@ class DynamicBatcher:
     and runs inference on an AnyIO worker thread to avoid blocking the asyncio event loop.
     """
 
-    def __init__(self, engine: TranslationEngine, batch_size: int = 32, max_wait_ms: float = 10.0):
+    def __init__(
+        self,
+        engine: TranslationEngine,
+        batch_size: int = 32,
+        max_wait_ms: float = 10.0,
+        max_queue_depth: int = 1000,
+    ):
         self.engine = engine
         self.batch_size = batch_size
         self.max_wait_ms = max_wait_ms
+        self.max_queue_depth = max_queue_depth
         self._queue: asyncio.Queue[BatchJob] | None = None
         self._worker_task: asyncio.Task | None = None
         self._stop_event: asyncio.Event | None = None
@@ -89,7 +96,7 @@ class DynamicBatcher:
     @property
     def queue(self) -> asyncio.Queue[BatchJob]:
         if self._queue is None:
-            self._queue = asyncio.Queue()
+            self._queue = asyncio.Queue(maxsize=self.max_queue_depth)
         return self._queue
 
     @property
@@ -108,10 +115,13 @@ class DynamicBatcher:
             logger.warning("Dynamic batcher worker is already running.")
             return
         self._stop_event = asyncio.Event()
-        self._queue = asyncio.Queue()
+        self._queue = asyncio.Queue(maxsize=self.max_queue_depth)
         self._worker_task = asyncio.create_task(self._batcher_loop(), name="dynamic_batcher_worker")
         logger.info(
-            "Dynamic batcher worker started (batch_size=%d, max_wait_ms=%.1fms)", self.batch_size, self.max_wait_ms
+            "Dynamic batcher worker started (batch_size=%d, max_wait_ms=%.1fms, max_queue_depth=%d)",
+            self.batch_size,
+            self.max_wait_ms,
+            self.max_queue_depth,
         )
 
     async def stop(self) -> None:
@@ -156,7 +166,10 @@ class DynamicBatcher:
             future=future,
             created_at=time.perf_counter(),
         )
-        await self.queue.put(job)
+        try:
+            self.queue.put_nowait(job)
+        except asyncio.QueueFull:
+            raise
         return await future
 
     async def _batcher_loop(self) -> None:
@@ -182,7 +195,7 @@ class DynamicBatcher:
                         next_job = await asyncio.wait_for(self.queue.get(), timeout=timeout)
                         jobs.append(next_job)
                         total_sentences += len(next_job.texts)
-                    except (asyncio.TimeoutError, TimeoutError, asyncio.CancelledError):
+                    except (TimeoutError, asyncio.CancelledError):
                         break
 
                 # Execute batch processing
@@ -254,6 +267,7 @@ batcher = DynamicBatcher(
     engine=engine,
     batch_size=settings.batch_size,
     max_wait_ms=settings.max_wait_ms,
+    max_queue_depth=settings.max_queue_depth,
 )
 rate_limiter = SlidingWindowRateLimiter(
     requests_limit=settings.rate_limit_requests,
@@ -279,6 +293,7 @@ async def lifespan(app: FastAPI):
             )
     except Exception as exc:
         logger.error("Could not load translation engine during startup: %s", exc)
+        raise
 
     batcher.start()
     yield
@@ -300,11 +315,12 @@ app = FastAPI(
 # Correlation ID & Structured Logging Middleware
 app.add_middleware(RequestIdAndStructuredLoggingMiddleware)
 
-# CORS middleware
+# CORS middleware (Hardened: forbid credentials when wildcard origin is configured)
+cors_allow_credentials = False if "*" in settings.cors_origins else True
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=[
@@ -442,14 +458,22 @@ async def translate(payload: TranslationRequest, request: Request, response: Res
             tokens_generated=total_tokens,
         )
 
+    except asyncio.QueueFull as exc:
+        REQUESTS_TOTAL.labels(endpoint="/v1/translate", status="503").inc()
+        logger.warning("Translation queue saturated (max_queue_depth=%d): %s", settings.max_queue_depth, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Translation queue saturated, retry later",
+        ) from exc
     except HTTPException:
         raise
     except Exception as exc:
         REQUESTS_TOTAL.labels(endpoint="/v1/translate", status="500").inc()
         logger.error("Translation request failed: %s", exc, exc_info=True)
+        request.state.error_message = str(exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Translation processing error: {exc!s}",
+            detail="An internal translation error occurred. Please quote your X-Request-ID for assistance.",
         ) from exc
     finally:
         IN_FLIGHT_REQUESTS.dec()

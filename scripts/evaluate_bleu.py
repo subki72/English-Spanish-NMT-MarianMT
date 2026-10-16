@@ -13,6 +13,10 @@ import ctranslate2
 import sacrebleu
 import sentencepiece as spm
 
+# Wrap sys.stdout for UTF-8 encoding / safe error handler on Windows CLI (avoid cp1252 crash)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
