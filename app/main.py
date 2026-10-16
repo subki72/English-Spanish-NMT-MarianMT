@@ -287,7 +287,13 @@ async def lifespan(app: FastAPI):
         logger.info("Model loaded successfully on startup.")
     except Exception as exc:
         logger.error("Could not load translation engine during startup: %s", exc)
-        raise
+        if settings.fail_fast_startup:
+            raise
+        logger.warning(
+            "Service initialized with unready translation engine (fail_fast_startup=False): %s. "
+            "Liveness probe (/healthz) will succeed, while readiness probe (/readyz) will report 503.",
+            exc,
+        )
 
     batcher.start()
     yield

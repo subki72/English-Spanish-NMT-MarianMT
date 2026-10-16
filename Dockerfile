@@ -26,6 +26,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     MODEL_DIR="/app/models/opus-mt-en-es-ct2-int8" \
+    FAIL_FAST_STARTUP="false" \
     HOST="0.0.0.0" \
     PORT="8000"
 

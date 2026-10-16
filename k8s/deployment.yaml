@@ -55,6 +55,8 @@ spec:
           env:
             - name: MODEL_DIR
               value: "/app/models/opus-mt-en-es-ct2-int8"
+            - name: FAIL_FAST_STARTUP
+              value: "true"
             - name: DEVICE
               value: "cpu"
             - name: COMPUTE_TYPE

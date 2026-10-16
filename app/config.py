@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     environment: str = Field(default="production", description="Environment: production, staging, development")
     enable_metrics: bool = Field(default=True, description="Enable Prometheus metrics endpoint")
     cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
+    fail_fast_startup: bool = Field(
+        default=True,
+        description="Whether missing model files should immediately fail service startup. Set to False for container smoke testing.",
+    )
 
     # Rate Limiting & Throttling
     enable_rate_limiting: bool = Field(

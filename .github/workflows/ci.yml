@@ -65,7 +65,23 @@ jobs:
 
       - name: Run container & verify healthz
         run: |
-          docker run -d --name nmt-smoke-container -p 8000:8000 nmt-service:smoke
-          sleep 5
-          python3 -c "import urllib.request; res = urllib.request.urlopen('http://localhost:8000/healthz'); assert res.status == 200; print('Healthz OK:', res.read().decode())"
+          docker run -d --name nmt-smoke-container -p 8000:8000 -e FAIL_FAST_STARTUP=false nmt-service:smoke
+
+          # Resilient polling loop for container liveness
+          SUCCESS=0
+          for i in {1..15}; do
+            if python3 -c "import urllib.request; res = urllib.request.urlopen('http://localhost:8000/healthz'); assert res.status == 200; print('Healthz OK:', res.read().decode())"; then
+              SUCCESS=1
+              break
+            fi
+            echo "Waiting for container to accept connections (attempt $i/15)..."
+            sleep 1
+          done
+
+          if [ "$SUCCESS" -ne 1 ]; then
+            echo "Container health check failed. Dumping logs:"
+            docker logs nmt-smoke-container
+            exit 1
+          fi
+
           docker stop nmt-smoke-container

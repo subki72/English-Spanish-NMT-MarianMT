@@ -988,6 +988,31 @@ async def test_lifespan_fail_fast_on_missing_model_dir(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_lifespan_graceful_startup_when_fail_fast_disabled(monkeypatch, tmp_path):
+    """Verify lifespan startup allows boot without raising when fail_fast_startup=False."""
+    from app.config import settings
+    from app.main import lifespan
+
+    missing_dir = tmp_path / "nonexistent_model_dir"
+    monkeypatch.setattr(settings, "model_dir", missing_dir)
+    monkeypatch.setattr(settings, "fail_fast_startup", False)
+
+    async with lifespan(app):
+        assert not engine.is_ready
+        assert "Model directory does not exist" in (engine.load_error or "")
+
+        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp_health = await client.get("/healthz")
+            assert resp_health.status_code == 200
+            assert resp_health.json()["status"] == "ok"
+
+            resp_ready = await client.get("/readyz")
+            assert resp_ready.status_code == 503
+            assert resp_ready.json()["ready"] is False
+            assert "Model directory does not exist" in resp_ready.json()["details"]
+
+
+@pytest.mark.asyncio
 async def test_max_input_length_override(mock_ready_engine):
     """Verify that settings.max_input_length dynamically enforces maximum text length."""
     from app.config import settings

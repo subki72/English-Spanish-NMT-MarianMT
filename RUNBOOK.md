@@ -185,6 +185,21 @@ kubectl set env deployment/nmt-service RATE_LIMIT_REQUESTS=120 RATE_LIMIT_WINDOW
 3. If traffic is abusive:
    - Apply IP block rule at the Ingress / Cloudflare / WAF layer.
 
+### Playbook D: Pod Startup Failure & Missing Model Mount
+1. **Symptoms**: Pod in `CrashLoopBackOff` or `/readyz` returning HTTP 503.
+2. **Diagnosis**:
+   - Check container logs for `FileNotFoundError` or `Could not load translation engine during startup`:
+     ```bash
+     kubectl logs -l app=nmt-service --tail=100
+     ```
+   - Verify persistent volume or host path mount at `/app/models/opus-mt-en-es-ct2-int8`:
+     ```bash
+     kubectl describe pod -l app=nmt-service
+     ```
+3. **Resolution**:
+   - In production, `FAIL_FAST_STARTUP=true` guarantees the pod fails fast rather than becoming a zombie pod. Ensure the model PVC/mount is correctly mapped.
+   - In decoupled CI smoke tests or lightweight build verification where models are mounted post-boot, set `FAIL_FAST_STARTUP=false` so `/healthz` succeeds while `/readyz` reports unready status until models are mounted.
+
 ---
 
 ## 5. Cold-Start Mitigation & Pre-warming

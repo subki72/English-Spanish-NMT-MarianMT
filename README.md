@@ -261,6 +261,7 @@ Customize the service via environment variables or a `.env` file:
 | `CORS_ORIGINS` | `*` | Allowed CORS origins (credentials auto-disabled if `*`) |
 | `ENABLE_STRUCTURED_LOGGING`| `true` | Emit structured JSON audit logs for requests |
 | `ENABLE_METRICS` | `true` | Expose `/metrics` Prometheus endpoint |
+| `FAIL_FAST_STARTUP` | `true` | Fail startup immediately if model binary is missing (set to `false` for smoke testing) |
 | `INTRA_THREADS` | `4` | Number of OpenMP threads for CTranslate2 compute |
 | `LOG_LEVEL` | `INFO` | Application log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
