@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nmt-service-pdb
+  namespace: default
+  labels:
+    app: nmt-service
+    app.kubernetes.io/name: nmt-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: nmt-service

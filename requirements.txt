@@ -1,0 +1,9 @@
+torch
+numpy
+pandas
+matplotlib
+transformers
+datasets
+evaluate
+sacrebleu
+sentencepiece

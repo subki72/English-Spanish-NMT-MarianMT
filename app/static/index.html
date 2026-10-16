@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-zinc-950 text-zinc-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MarianMT — English to Spanish Neural Machine Translation</title>
+  <meta name="description" content="Production-ready English-to-Spanish NMT microservice powered by CTranslate2 INT8 and SentencePiece with dynamic request batching.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            zinc: {
+              925: '#121215',
+              950: '#09090b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="h-screen w-screen flex flex-col overflow-hidden bg-zinc-950 text-zinc-100 font-sans antialiased">
+
+  <!-- Top App Navigation Bar -->
+  <header class="h-14 shrink-0 border-b border-zinc-800/80 bg-zinc-950/90 px-5 flex items-center justify-between z-10">
+    <div class="flex items-center gap-3">
+      <!-- MarianMT Logo: Neural Node Graph HD SVG -->
+      <div class="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-200 shadow-sm">
+        <svg class="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="18" cy="5" r="3"/>
+          <circle cx="6" cy="12" r="3"/>
+          <circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+      </div>
+
+      <div class="flex items-baseline gap-2">
+        <h1 class="font-semibold text-sm tracking-tight text-zinc-100">MarianMT</h1>
+        <span class="text-xs text-zinc-500 font-mono hidden sm:inline">opus-mt-en-es</span>
+      </div>
+
+      <!-- Engine Badge -->
+      <div class="hidden md:flex items-center gap-1.5 px-2 py-0.5 rounded border border-zinc-800 bg-zinc-900 text-[11px] font-mono text-zinc-400">
+        <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+        <span>CTranslate2 INT8</span>
+      </div>
+    </div>
+
+    <!-- Right Controls: Status & External Links -->
+    <div class="flex items-center gap-3">
+      <!-- Live Health Pill -->
+      <div id="healthIndicator" class="flex items-center gap-2 px-2.5 py-1 rounded-md border border-zinc-800 bg-zinc-900/80 text-xs">
+        <span id="healthDot" class="status-dot ready"></span>
+        <span id="healthText" class="font-medium text-emerald-400">Checking...</span>
+      </div>
+
+      <div class="h-4 w-px bg-zinc-800"></div>
+
+      <!-- Swagger API Docs -->
+      <a href="/docs" target="_blank" rel="noopener noreferrer" class="btn-ghost text-xs" title="OpenAPI Documentation (/docs)">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+        </svg>
+        <span class="hidden sm:inline">API Docs</span>
+      </a>
+
+      <!-- Prometheus Metrics -->
+      <a href="/metrics" target="_blank" rel="noopener noreferrer" class="btn-ghost text-xs" title="Prometheus Metrics (/metrics)">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        <span class="hidden sm:inline">Metrics</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Workspace Control Bar -->
+  <div class="h-12 shrink-0 border-b border-zinc-800/80 bg-zinc-900/60 px-5 flex items-center justify-between z-10 text-xs">
+    <!-- Language Direction Selector -->
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800/80 border border-zinc-700/60 font-medium text-zinc-200">
+        <span class="text-zinc-400 font-mono text-[10px]">SRC</span>
+        <span>English</span>
+      </div>
+
+      <!-- Swap Direction Button (Interactive with Unidirectional Notice) -->
+      <button id="swapDirectionBtn" class="btn-swap" title="Swap languages (opus-mt-en-es is unidirectional English → Spanish)">
+        <svg class="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m7 16-4-4 4-4"/>
+          <path d="M3 12h18"/>
+          <path d="m17 8 4 4-4 4"/>
+        </svg>
+      </button>
+
+      <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800/80 border border-zinc-700/60 font-medium text-zinc-200">
+        <span class="text-zinc-400 font-mono text-[10px]">TGT</span>
+        <span>Spanish</span>
+      </div>
+    </div>
+
+    <!-- Translation Controls: Beam Size & Trigger -->
+    <div class="flex items-center gap-3">
+      <!-- Beam Size Selector -->
+      <div class="flex items-center gap-2">
+        <label for="beamSizeSelect" class="text-zinc-400 font-medium flex items-center gap-1 hidden sm:flex">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" x2="4" y1="21" y2="14"/>
+            <line x1="4" x2="4" y1="10" y2="3"/>
+            <line x1="12" x2="12" y1="21" y2="12"/>
+            <line x1="12" x2="12" y1="8" y2="3"/>
+            <line x1="20" x2="20" y1="21" y2="16"/>
+            <line x1="20" x2="20" y1="12" y2="3"/>
+            <line x1="1" x2="7" y1="14" y2="14"/>
+            <line x1="9" x2="15" y1="8" y2="8"/>
+            <line x1="17" x2="23" y1="16" y2="16"/>
+          </svg>
+          <span>Beam:</span>
+        </label>
+        <select id="beamSizeSelect" class="bg-zinc-800 text-zinc-200 border border-zinc-700 rounded-md px-2 py-1 text-xs outline-none cursor-pointer hover:border-zinc-600 transition-colors">
+          <option value="1">1 (Greedy / Fast)</option>
+          <option value="2">2 (Balanced)</option>
+          <option value="3">3 (Standard)</option>
+          <option value="4" selected>4 (High Precision)</option>
+          <option value="5">5 (Deep Search)</option>
+        </select>
+      </div>
+
+      <!-- Translate Trigger Button -->
+      <button id="translateBtn" class="btn-primary" title="Trigger Translation (Ctrl+Enter)">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        <span>Translate</span>
+        <kbd class="hidden md:inline-block px-1.5 py-0.2 bg-blue-700/60 border border-blue-500/40 rounded text-[10px] font-mono">Ctrl+↵</kbd>
+      </button>
+    </div>
+  </div>
+
+  <!-- Full-Screen Dual-Pane Editor -->
+  <main class="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden bg-zinc-950">
+
+    <!-- Left Pane: English Source -->
+    <section class="flex-1 flex flex-col min-w-0 border-b md:border-b-0 md:border-r border-zinc-800/80 bg-zinc-950/60 relative">
+      <!-- Pane Header -->
+      <div class="h-9 shrink-0 px-5 flex items-center justify-between border-b border-zinc-850 bg-zinc-900/30 text-xs">
+        <span class="font-medium text-zinc-400">English Input</span>
+        <div class="flex items-center gap-3">
+          <span id="charCounter" class="font-mono text-zinc-500 text-[11px]">0 / 1000</span>
+          <button id="clearBtn" class="btn-ghost text-xs p-1 h-6" title="Clear text" disabled>
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"/>
+              <path d="m6 6 12 12"/>
+            </svg>
+            <span class="hidden sm:inline">Clear</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Input Textarea: Fills remaining height -->
+      <div class="flex-1 p-5 min-h-0 flex flex-col">
+        <textarea
+          id="sourceText"
+          maxlength="1000"
+          placeholder="Type or paste English text here... (Ctrl+Enter to translate immediately, or pause to auto-translate)"
+          class="w-full flex-1 bg-transparent text-zinc-100 placeholder-zinc-600 text-base md:text-lg leading-relaxed resize-none outline-none font-normal select-text"
+          spellcheck="false"
+        ></textarea>
+      </div>
+
+      <!-- Pane Footer: Sample text pills -->
+      <div class="h-11 shrink-0 px-5 border-t border-zinc-900 flex items-center gap-2 overflow-x-auto no-scrollbar bg-zinc-950/80">
+        <span class="text-[11px] text-zinc-500 shrink-0 font-medium">Examples:</span>
+        <button class="sample-pill" data-text="Artificial intelligence is changing the world.">
+          <svg class="w-3 h-3 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+          </svg>
+          <span>AI Revolution</span>
+        </button>
+        <button class="sample-pill" data-text="Law is mostly about logic.">
+          <svg class="w-3 h-3 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/>
+            <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/>
+            <path d="M7 21h10"/>
+            <path d="M12 3v18"/>
+            <path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>
+          </svg>
+          <span>Law & Logic</span>
+        </button>
+        <button class="sample-pill" data-text="Neural machine translation runs with dynamic batching.">
+          <svg class="w-3 h-3 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 17 12 22 22 17"/>
+            <polyline points="2 12 12 17 22 12"/>
+          </svg>
+          <span>Dynamic Batching</span>
+        </button>
+        <button class="sample-pill" data-text="Production-ready systems require rigorous testing and observability.">
+          <svg class="w-3 h-3 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+          <span>Observability</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Right Pane: Spanish Translation -->
+    <section class="flex-1 flex flex-col min-w-0 bg-zinc-950/90 relative">
+      <!-- Pane Header: Latency, Tokens, and Instant Copy -->
+      <div class="h-9 shrink-0 px-5 flex items-center justify-between border-b border-zinc-850 bg-zinc-900/30 text-xs">
+        <span class="font-medium text-zinc-400">Spanish Translation</span>
+        <div class="flex items-center gap-2">
+          <!-- Latency Badge -->
+          <div class="stat-pill" title="Inference Latency">
+            <svg class="w-3 h-3 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span id="latencyBadge">-- ms</span>
+          </div>
+
+          <!-- Tokens Pill -->
+          <div class="stat-pill hidden sm:inline-flex" title="Estimated Tokens">
+            <svg class="w-3 h-3 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" x2="20" y1="9" y2="9"/>
+              <line x1="4" x2="20" y1="15" y2="15"/>
+              <line x1="10" x2="8" y1="3" y2="21"/>
+              <line x1="16" x2="14" y1="3" y2="21"/>
+            </svg>
+            <span id="tokenPill">0 tokens</span>
+          </div>
+
+          <!-- Copy Button -->
+          <button id="copyBtn" class="btn-secondary h-6 text-xs px-2" title="Copy to clipboard" disabled>
+            <!-- Copy Icon SVG -->
+            <svg id="copyIcon" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+            </svg>
+            <!-- Checkmark Icon SVG (hidden by default) -->
+            <svg id="checkIcon" class="w-3.5 h-3.5 text-emerald-400 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span id="copyBtnText">Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Output Content Area -->
+      <div class="flex-1 p-5 min-h-0 overflow-y-auto relative flex flex-col">
+        <!-- Placeholder State -->
+        <div id="targetPlaceholder" class="flex-1 flex flex-col items-center justify-center text-zinc-600 text-sm gap-2 select-none">
+          <svg class="w-8 h-8 text-zinc-700 stroke-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m5 8 6 6"/>
+            <path d="m4 14 6-6 2-3"/>
+            <path d="M2 5h12"/>
+            <path d="M7 2h1"/>
+            <path d="m22 22-5-10-5 10"/>
+            <path d="M14 18h6"/>
+          </svg>
+          <span>Translation will appear here in real-time</span>
+        </div>
+
+        <!-- Loading State Indicator -->
+        <div id="targetLoading" class="hidden flex-1 flex flex-col items-center justify-center text-zinc-500 text-sm gap-3 select-none">
+          <svg class="w-6 h-6 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span class="animate-subtle-pulse font-mono text-xs">Translating via CTranslate2...</span>
+        </div>
+
+        <!-- Translated Text Display -->
+        <div id="targetText" class="hidden text-zinc-100 text-base md:text-lg leading-relaxed select-text whitespace-pre-wrap font-normal"></div>
+
+        <!-- Error State Banner -->
+        <div id="targetError" class="hidden flex-1 flex flex-col items-center justify-center text-center p-6 gap-3">
+          <div class="w-10 h-10 rounded-full bg-red-950/60 border border-red-800/80 flex items-center justify-center text-red-400">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <div class="text-sm font-medium text-red-300" id="errorMessage">Translation request failed.</div>
+          <button id="errorRetryBtn" class="btn-secondary text-xs mt-1">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            <span>Retry Translation</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Pane Footer: Model Metadata -->
+      <div class="h-11 shrink-0 px-5 border-t border-zinc-900 flex items-center justify-between text-xs text-zinc-500 bg-zinc-950/80 font-mono">
+        <span class="text-[11px] flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          <span id="modelPill">opus-mt-en-es-ct2-int8</span>
+        </span>
+        <span class="text-[11px] hidden sm:inline text-zinc-600">Pure SentencePiece (Zero PyTorch runtime)</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom System Status Bar -->
+  <footer class="h-8 shrink-0 border-t border-zinc-800/80 bg-zinc-950 px-5 flex items-center justify-between text-[11px] text-zinc-500 font-mono z-10">
+    <div class="flex items-center gap-3">
+      <span id="footerHealthInfo" class="flex items-center gap-1.5 text-zinc-400">
+        <span id="footerHealthDot" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+        <span id="footerHealthText">Active • CTranslate2 INT8 Ready</span>
+      </span>
+      <span class="hidden md:inline text-zinc-700">•</span>
+      <span id="footerUptime" class="hidden md:inline text-zinc-500">Uptime: --</span>
+    </div>
+
+    <div class="hidden lg:flex items-center gap-2 text-zinc-500">
+      <span>Auto-translate: 400ms debounce</span>
+      <span class="text-zinc-700">•</span>
+      <span>Max length: 1,000 chars</span>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <span class="text-zinc-400">POST /v1/translate</span>
+      <span class="text-zinc-700 hidden sm:inline">•</span>
+      <span class="hidden sm:inline text-zinc-500">v1.0.0</span>
+    </div>
+  </footer>
+
+  <!-- Subtle Notification Toast -->
+  <div id="toast" class="toast">
+    <svg class="w-4 h-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="16" x2="12" y2="12"/>
+      <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+    <span id="toastText"></span>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

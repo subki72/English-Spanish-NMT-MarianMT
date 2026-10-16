@@ -1,0 +1,131 @@
+"""Application configuration using Pydantic Settings v2.
+Supports 12-factor configuration via environment variables.
+"""
+
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Runtime service configuration settings."""
+
+    # Model & Engine
+    model_dir: Path = Field(
+        default=Path("models/opus-mt-en-es-ct2-int8"),
+        description="Directory containing CTranslate2 INT8 model files and vocabulary",
+    )
+    sp_source_model: Path | None = Field(
+        default=None,
+        description="Path to SentencePiece source model (.spm). If None, auto-detected from model_dir.",
+    )
+    sp_target_model: Path | None = Field(
+        default=None,
+        description="Path to SentencePiece target model (.spm). If None, auto-detected from model_dir.",
+    )
+    device: str = Field(
+        default="cpu",
+        description="Compute device: 'cpu' or 'cuda'",
+    )
+    device_index: int = Field(
+        default=0,
+        description="Device index when running on GPU",
+    )
+    compute_type: str = Field(
+        default="int8",
+        description="Quantization compute type: 'int8', 'int8_float16', 'float16', or 'auto'",
+    )
+    intra_threads: int = Field(
+        default=4,
+        description="Number of OpenMP threads for CTranslate2 compute execution",
+    )
+    inter_threads: int = Field(
+        default=1,
+        description="Number of parallel translation streams within CTranslate2",
+    )
+
+    # Inference & Dynamic Batcher
+    batch_size: int = Field(
+        default=32,
+        ge=1,
+        le=256,
+        description="Maximum batch size dynamically formed before inference execution",
+    )
+    max_wait_ms: float = Field(
+        default=10.0,
+        ge=0.0,
+        le=500.0,
+        description="Maximum wait time in milliseconds for collecting requests into a batch",
+    )
+    beam_size: int = Field(
+        default=4,
+        ge=1,
+        le=10,
+        description="Beam search size for decoding",
+    )
+    max_input_length: int = Field(
+        default=1000,
+        ge=1,
+        le=10000,
+        description="Maximum allowed input character length per sentence",
+    )
+    max_decoding_length: int = Field(
+        default=256,
+        ge=16,
+        le=1024,
+        description="Maximum generated tokens to prevent truncation while capping compute",
+    )
+
+    # Server & Operations
+    host: str = Field(default="0.0.0.0", description="Bind host")
+    port: int = Field(default=8000, description="Bind port")
+    workers: int = Field(default=1, description="Number of worker processes")
+    log_level: str = Field(default="INFO", description="Logging level")
+    environment: str = Field(default="production", description="Environment: production, staging, development")
+    enable_metrics: bool = Field(default=True, description="Enable Prometheus metrics endpoint")
+    cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
+
+    # Rate Limiting & Throttling
+    enable_rate_limiting: bool = Field(
+        default=True,
+        description="Enable per-IP rate limiting on translation endpoint",
+    )
+    rate_limit_requests: int = Field(
+        default=60,
+        ge=1,
+        description="Maximum translation requests allowed per client IP within window",
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        description="Time window in seconds for sliding window rate limiter",
+    )
+
+    # Observability & Structured Logging
+    enable_structured_logging: bool = Field(
+        default=True,
+        description="Enable structured JSON access and error logging",
+    )
+
+    # Metadata
+    app_name: str = Field(
+        default="English-Spanish NMT MarianMT Service",
+        description="FastAPI Application Name",
+    )
+    app_version: str = Field(
+        default="1.0.0",
+        description="Application version",
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_prefix="",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+
+# Global singleton instance
+settings = Settings()

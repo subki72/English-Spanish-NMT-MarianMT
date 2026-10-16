@@ -1,0 +1,25 @@
+# Environments
+.env
+.venv
+venv/
+env/
+ENV/
+
+# Git
+.git/
+.github/
+
+# Python Cache & Testing
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# Documentation & Prompts
+Prompt/
+*.ipynb
+.ipynb_checkpoints/

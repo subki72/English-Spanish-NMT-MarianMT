@@ -1,0 +1,35 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Python Cache & Testing
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# Converted & Pre-trained Models
+models/*
+!models/.gitkeep
+results_translator_ted/
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+*.msgpack
+*.spm
+
+# OS generated files
+.DS_Store
+Thumbs.db
