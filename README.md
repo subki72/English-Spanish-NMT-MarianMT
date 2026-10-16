@@ -90,7 +90,7 @@ The service includes a built-in, responsive, full-screen (100vh) translation wor
 **[http://localhost:8000/](http://localhost:8000/)**
 
 ### Web UI Features:
-- **Zero-Bloat & Air-Gapped Ready**: Styled entirely via self-contained [app/static/styles.css](file:///c:/Users/subki/Downloads/English-Spanish-NMT-MarianMT/app/static/styles.css) without any external CDN dependencies.
+- **Zero-Bloat & Air-Gapped Ready**: Styled entirely via self-contained [app/static/styles.css](app/static/styles.css) without any external CDN dependencies.
 - **100% HD Vector SVG Icons**: Crisp Lucide vector paths for all actions, settings, and status indicators.
 - **Real-Time Telemetry**: Live display of server-side latency (`ms`), token count, and active health status.
 - **Productivity Shortcuts**: Quick sample pills, `Ctrl+Enter` / `⌘+Enter` immediate translation trigger, auto-translate debounce, and one-click copy to clipboard.
@@ -188,17 +188,17 @@ docker compose up -d
 
 ### 3. Kubernetes Manifests (`k8s/`)
 Production-hardened Kubernetes manifests are located in the `k8s/` directory:
-- [k8s/deployment.yaml](file:///c:/Users/subki/Downloads/English-Spanish-NMT-MarianMT/k8s/deployment.yaml): Non-root securityContext, resource limits, liveness probe (`/healthz`), and readiness/startup probes (`/readyz`).
-- [k8s/service.yaml](file:///c:/Users/subki/Downloads/English-Spanish-NMT-MarianMT/k8s/service.yaml): ClusterIP service exposure.
-- [k8s/hpa.yaml](file:///c:/Users/subki/Downloads/English-Spanish-NMT-MarianMT/k8s/hpa.yaml): Horizontal Pod Autoscaler targeting 70% CPU (2 to 10 replicas).
-- [k8s/pdb.yaml](file:///c:/Users/subki/Downloads/English-Spanish-NMT-MarianMT/k8s/pdb.yaml): Pod Disruption Budget ensuring high availability during node maintenance.
+- [k8s/deployment.yaml](k8s/deployment.yaml): Non-root securityContext, resource limits, liveness probe (`/healthz`), and readiness/startup probes (`/readyz`).
+- [k8s/service.yaml](k8s/service.yaml): ClusterIP service exposure.
+- [k8s/hpa.yaml](k8s/hpa.yaml): Horizontal Pod Autoscaler targeting 70% CPU (2 to 10 replicas).
+- [k8s/pdb.yaml](k8s/pdb.yaml): Pod Disruption Budget ensuring high availability during node maintenance.
 
 Deploy to cluster:
 ```bash
 kubectl apply -f k8s/
 ```
 
-For operational SOPs, incident response playbooks, and alerting PromQL rules, refer to [RUNBOOK.md](file:///c:/Users/subki/Downloads/English-Spanish-NMT-MarianMT/RUNBOOK.md).
+For operational SOPs, incident response playbooks, and alerting PromQL rules, refer to [RUNBOOK.md](RUNBOOK.md).
 
 ---
 
