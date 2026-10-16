@@ -11,7 +11,7 @@ import json
 import logging
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -67,7 +67,7 @@ class RequestIdAndStructuredLoggingMiddleware(BaseHTTPMiddleware):
                 tokens_generated = getattr(request.state, "tokens_generated", 0)
 
                 log_entry: dict[str, Any] = {
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "request_id": request_id,
                     "client_ip": client_ip,
                     "method": request.method,
