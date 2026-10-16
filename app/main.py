@@ -281,16 +281,10 @@ service_start_time = time.time()
 async def lifespan(app: FastAPI):
     """FastAPI lifespan management for startup initialization and graceful shutdown."""
     logger.info("Initializing service '%s' (v%s)...", settings.app_name, settings.app_version)
-    # Attempt to load model on startup if directory exists
     try:
-        if settings.model_dir.exists() and (settings.model_dir / "model.bin").exists():
-            engine.load()
-            logger.info("Model loaded successfully on startup.")
-        else:
-            logger.warning(
-                "Model directory '%s' not found or incomplete. Run scripts/convert_model.py to initialize.",
-                settings.model_dir,
-            )
+        engine.model_dir = settings.model_dir
+        engine.load()
+        logger.info("Model loaded successfully on startup.")
     except Exception as exc:
         logger.error("Could not load translation engine during startup: %s", exc)
         raise
@@ -316,7 +310,7 @@ app = FastAPI(
 app.add_middleware(RequestIdAndStructuredLoggingMiddleware)
 
 # CORS middleware (Hardened: forbid credentials when wildcard origin is configured)
-cors_allow_credentials = False if "*" in settings.cors_origins else True
+cors_allow_credentials = not any(origin.strip() == "*" for origin in settings.cors_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -420,6 +414,7 @@ async def translate(payload: TranslationRequest, request: Request, response: Res
             if engine.is_ready
             else f"Translation engine is not ready: {engine.load_error or 'Model not loaded'}"
         )
+        request.state.error_message = detail
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=detail,
@@ -461,6 +456,7 @@ async def translate(payload: TranslationRequest, request: Request, response: Res
     except asyncio.QueueFull as exc:
         REQUESTS_TOTAL.labels(endpoint="/v1/translate", status="503").inc()
         logger.warning("Translation queue saturated (max_queue_depth=%d): %s", settings.max_queue_depth, exc)
+        request.state.error_message = "Translation queue saturated, retry later"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Translation queue saturated, retry later",

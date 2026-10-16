@@ -7,6 +7,7 @@ Provides per-IP throttling conforming to RFC 6585 with standard rate-limit heade
 """
 
 import asyncio
+import ipaddress
 import math
 import time
 from collections import defaultdict
@@ -14,6 +15,24 @@ from collections import defaultdict
 from fastapi import HTTPException, Request, status
 
 from app.config import settings
+
+
+def _is_ip_trusted(ip_str: str, trusted_proxies: set[str]) -> bool:
+    """Check if direct peer IP is trusted by exact match or CIDR network membership."""
+    if ip_str in trusted_proxies:
+        return True
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+        for entry in trusted_proxies:
+            if "/" in entry:
+                try:
+                    if ip_obj in ipaddress.ip_network(entry, strict=False):
+                        return True
+                except ValueError:
+                    continue
+    except ValueError:
+        pass
+    return False
 
 
 class SlidingWindowRateLimiter:
@@ -35,9 +54,9 @@ class SlidingWindowRateLimiter:
     @staticmethod
     def get_client_ip(request: Request) -> str:
         """Extract client IP address, trusting X-Forwarded-For/X-Real-IP only from trusted proxies."""
-        direct_ip = request.client.host if request.client and request.client.host else "127.0.0.1"
+        direct_ip = request.client.host if request.client and request.client.host else None
 
-        if direct_ip in settings.trusted_proxies:
+        if direct_ip and _is_ip_trusted(direct_ip, settings.trusted_proxies):
             forwarded = request.headers.get("x-forwarded-for")
             if forwarded:
                 # First non-empty IP in comma-separated list is the original client
@@ -49,7 +68,7 @@ class SlidingWindowRateLimiter:
             if real_ip and real_ip.strip():
                 return real_ip.strip()
 
-        return direct_ip
+        return direct_ip or "127.0.0.1"
 
     def _cleanup_expired(self, now: float) -> None:
         """Evict stale timestamp records to prevent memory leak over time."""

@@ -794,12 +794,12 @@ def test_client_ip_proxy_chains_and_fallbacks():
     req_direct = Request(scope_direct)
     assert SlidingWindowRateLimiter.get_client_ip(req_direct) == "192.168.1.100"
 
-    # 5. Fallback to 127.0.0.1 when client object is None
+    # 5. Untrusted client object is None sending X-Forwarded-For: must return 127.0.0.1 without trusting header
     scope_none = {
         "type": "http",
         "method": "GET",
         "path": "/",
-        "headers": Headers().raw,
+        "headers": Headers({"x-forwarded-for": "203.0.113.195"}).raw,
         "client": None,
     }
     req_none = Request(scope_none)
@@ -810,6 +810,31 @@ def test_client_ip_proxy_chains_and_fallbacks():
     try:
         settings.trusted_proxies = {"10.0.0.1"}
         assert SlidingWindowRateLimiter.get_client_ip(req_untrusted) == "203.0.113.195"
+    finally:
+        settings.trusted_proxies = orig_proxies
+
+    # 7. CIDR subnet in trusted_proxies
+    try:
+        settings.trusted_proxies = {"10.0.0.0/8"}
+        scope_cidr_trusted = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": Headers({"x-forwarded-for": "203.0.113.195"}).raw,
+            "client": ("10.244.1.5", 12345),
+        }
+        req_cidr = Request(scope_cidr_trusted)
+        assert SlidingWindowRateLimiter.get_client_ip(req_cidr) == "203.0.113.195"
+
+        scope_cidr_untrusted = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": Headers({"x-forwarded-for": "203.0.113.195"}).raw,
+            "client": ("192.168.1.1", 12345),
+        }
+        req_cidr_untrusted = Request(scope_cidr_untrusted)
+        assert SlidingWindowRateLimiter.get_client_ip(req_cidr_untrusted) == "192.168.1.1"
     finally:
         settings.trusted_proxies = orig_proxies
 
@@ -885,17 +910,30 @@ async def test_structured_logging_on_500_single_emission(mock_ready_engine, capl
 
 
 @pytest.mark.asyncio
-async def test_bounded_queue_saturation_503(mock_ready_engine, monkeypatch):
-    """Verify that when dynamic batcher queue is full, incoming request returns HTTP 503."""
+async def test_bounded_queue_saturation_503(mock_ready_engine, monkeypatch, caplog):
+    """Verify that when dynamic batcher queue is full, incoming request returns HTTP 503 and records error in log."""
+    import logging
+
     batcher.start()
+    caplog.clear()
     try:
         # Mock put_nowait to raise asyncio.QueueFull simulating saturation
         monkeypatch.setattr(batcher.queue, "put_nowait", MagicMock(side_effect=asyncio.QueueFull))
 
-        async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.post("/v1/translate", json={"text": "Overflow request."})
-            assert resp.status_code == 503
-            assert "Translation queue saturated, retry later" in resp.json()["detail"]
+        with caplog.at_level(logging.WARNING, logger="nmt.structured"):
+            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.post("/v1/translate", json={"text": "Overflow request."})
+                assert resp.status_code == 503
+                assert "Translation queue saturated, retry later" in resp.json()["detail"]
+
+        structured_records = [
+            json.loads(record.message)
+            for record in caplog.records
+            if record.name == "nmt.structured" and "status_code" in record.message
+        ]
+        assert len(structured_records) >= 1
+        assert structured_records[-1]["status_code"] == 503
+        assert structured_records[-1].get("error") == "Translation queue saturated, retry later"
     finally:
         await batcher.stop()
 
@@ -931,6 +969,20 @@ async def test_lifespan_fail_fast_on_engine_load_error(monkeypatch, tmp_path):
     monkeypatch.setattr(engine, "load", failing_load)
 
     with pytest.raises(RuntimeError, match="Fatal weight corruption on boot"):
+        async with lifespan(app):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_lifespan_fail_fast_on_missing_model_dir(monkeypatch, tmp_path):
+    """Verify lifespan startup re-raises FileNotFoundError if model directory does not exist."""
+    from app.config import settings
+    from app.main import lifespan
+
+    missing_dir = tmp_path / "nonexistent_model_dir"
+    monkeypatch.setattr(settings, "model_dir", missing_dir)
+
+    with pytest.raises(FileNotFoundError):
         async with lifespan(app):
             pass
 
@@ -976,3 +1028,15 @@ async def test_batcher_submit_raises_queue_full():
 
     with pytest.raises(asyncio.QueueFull):
         await b.submit(["text"])
+
+
+def test_settings_comma_separated_env_parsing(monkeypatch):
+    """Verify Settings parses comma-delimited strings for trusted_proxies and cors_origins."""
+    from app.config import Settings
+
+    monkeypatch.setenv("TRUSTED_PROXIES", "127.0.0.1, 10.0.0.0/8, ::1")
+    monkeypatch.setenv("CORS_ORIGINS", "https://frontend.dev, https://app.dev")
+
+    s = Settings()
+    assert s.trusted_proxies == {"127.0.0.1", "10.0.0.0/8", "::1"}
+    assert s.cors_origins == ["https://frontend.dev", "https://app.dev"]

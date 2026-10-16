@@ -2,9 +2,11 @@
 Supports 12-factor configuration via environment variables.
 """
 
+import json
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -112,6 +114,32 @@ class Settings(BaseSettings):
         description="Set of trusted reverse proxy IP addresses allowed to forward client IPs via X-Forwarded-For",
     )
 
+    @field_validator("trusted_proxies", mode="before")
+    @classmethod
+    def _parse_trusted_proxies(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return {item.strip() for item in v.split(",") if item.strip()}
+        return v
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
     # Observability & Structured Logging
     enable_structured_logging: bool = Field(
         default=True,
@@ -135,6 +163,35 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: Any,
+        env_settings: Any,
+        dotenv_settings: Any,
+        file_secret_settings: Any,
+    ) -> tuple[Any, ...]:
+        for source in (env_settings, dotenv_settings):
+            if hasattr(source, "decode_complex_value"):
+                orig_decode = source.decode_complex_value
+
+                def _make_decoder(orig):
+                    def _custom_decoder(field_name: str, field: Any, value: Any) -> Any:
+                        try:
+                            return orig(field_name, field, value)
+                        except Exception:
+                            if field_name == "trusted_proxies" and isinstance(value, str):
+                                return {x.strip() for x in value.split(",") if x.strip()}
+                            if field_name == "cors_origins" and isinstance(value, str):
+                                return [x.strip() for x in value.split(",") if x.strip()]
+                            raise
+
+                    return _custom_decoder
+
+                source.decode_complex_value = _make_decoder(orig_decode)
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
 
 # Global singleton instance
