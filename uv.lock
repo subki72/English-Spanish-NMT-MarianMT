@@ -1,0 +1,20 @@
+version = 1
+requires-python = ">=3.10"
+
+[[package]]
+name = "fastapi"
+version = "0.143.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://pypi.org/simple/fastapi/fastapi-0.143.2.tar.gz" }
+
+[[package]]
+name = "ctranslate2"
+version = "4.8.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://pypi.org/simple/ctranslate2/ctranslate2-4.8.3.tar.gz" }
+
+[[package]]
+name = "uvicorn"
+version = "0.54.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://pypi.org/simple/uvicorn/uvicorn-0.54.0.tar.gz" }

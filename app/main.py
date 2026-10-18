@@ -17,7 +17,7 @@ import anyio
 import prometheus_client
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram
 
@@ -331,6 +331,20 @@ app.add_middleware(
         "X-RateLimit-Reset",
     ],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Centralized unhandled exception boundary preventing leakage of internal tracebacks."""
+    logger.error("Unhandled server exception on %s: %s", request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "status": "error",
+            "message": "Internal server error occurred while processing translation request.",
+            "detail": str(exc),
+        },
+    )
 
 
 # Static assets and Web UI

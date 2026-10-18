@@ -85,3 +85,10 @@ jobs:
           fi
 
           docker stop nmt-smoke-container
+
+      - name: Scan container image with Trivy for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'nmt-service:smoke'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
