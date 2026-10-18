@@ -1,6 +1,7 @@
 # English-to-Spanish Neural Machine Translation (NMT) — Production Service
 
-[![CI Pipeline](https://github.com/yourusername/English-Spanish-NMT-MarianMT/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/English-Spanish-NMT-MarianMT/actions)
+[![CI Pipeline](https://github.com/subki72/English-Spanish-NMT-MarianMT/actions/workflows/ci.yml/badge.svg)](https://github.com/subki72/English-Spanish-NMT-MarianMT/actions)
+[![Maturity Grade: Production](https://img.shields.io/badge/Maturity%20Grade-Production%20(79.3%2F100)-success.svg)](https://github.com/subki72/English-Spanish-NMT-MarianMT)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.143+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![CTranslate2](https://img.shields.io/badge/CTranslate2-INT8-blue.svg)](https://github.com/OpenNMT/CTranslate2)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
@@ -50,22 +51,30 @@ This production implementation eliminates all critical architectural blockers id
 - Python 3.10+ (Python 3.10, 3.11, or 3.12)
 - Virtual environment tool (`venv`, `conda`, or `uv`)
 
-### 2. Installation
+### 2. Installation & Quickstart
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/English-Spanish-NMT-MarianMT.git
+git clone https://github.com/subki72/English-Spanish-NMT-MarianMT.git
 cd English-Spanish-NMT-MarianMT
 
-# Create and activate virtual environment
+# Single-command setup via Makefile:
+make install
+
+# Run automated tests:
+make test
+
+# Run linter:
+make lint
+
+# Launch service locally:
+make run
+```
+
+Alternatively, set up manually with virtualenv:
+```bash
 python -m venv .venv
-
-# Linux/macOS:
-source .venv/bin/activate
-# Windows PowerShell:
-.venv\Scripts\Activate.ps1
-
-# Install production runtime dependencies
-pip install -r requirements-prod.txt
+source .venv/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
 > **Note for Development & Testing:** If you plan to run the test suite or re-convert models, install the dev dependencies via `pip install -r requirements-dev.txt`.
@@ -267,6 +276,12 @@ Customize the service via environment variables or a `.env` file:
 
 ---
 
-## License
+---
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Security & Governance
+
+- **Vulnerability Disclosure**: Review our security reporting guidelines in [SECURITY.md](SECURITY.md).
+- **Contribution Guidelines**: Development setup and pull request etiquette in [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Release Changelog**: Track semantic releases and version updates in [CHANGELOG.md](CHANGELOG.md).
+- **License**: Explicit open source licensing under the [MIT License](LICENSE).
+
