@@ -3,7 +3,7 @@
 pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
-ruff==0.17.1
+ruff==0.17.3
 sacrebleu==2.6.0
 sacremoses==0.2.0
 torch==2.14.1
