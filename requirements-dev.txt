@@ -6,6 +6,6 @@ httpx==0.28.1
 ruff==0.17.1
 sacrebleu==2.6.0
 sacremoses==0.2.0
-torch==2.14.1
+torch==2.15.0
 transformers==5.20.0
 datasets==5.1.0
