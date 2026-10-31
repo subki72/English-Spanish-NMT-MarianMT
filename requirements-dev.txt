@@ -1,7 +1,7 @@
 # Development, testing, and model conversion dependencies
 -r requirements-prod.txt
 pytest==9.1.1
-pytest-asyncio==1.4.0
+pytest-asyncio==1.4.1
 httpx==0.28.1
 ruff==0.17.1
 sacrebleu==2.6.0
